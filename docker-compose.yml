@@ -1,0 +1,82 @@
+version: "3"
+
+services:
+  webserver:
+    build:
+      context: ./container-files/bin/${PHPVERSION-php82}
+    container_name: "${APP_NAME-dslamp}-${PHPVERSION-php82}"
+    restart: "no"
+    ports:
+      - "80:80"
+      - "443:443"
+    links:
+      - dblink
+    volumes:
+      - ./:/var/www/html:rw
+      - ./container-files/config/php/php.ini:/usr/local/etc/php/php.ini
+      - ./container-files/config/ssl:/etc/apache2/ssl/
+      - ./container-files/config/vhosts:/etc/apache2/sites-enabled
+      - ./container-files/logs/apache2:/var/log/apache2
+      - ./container-files/logs/xdebug:/var/log/xdebug
+    environment:
+      APACHE_DOCUMENT_ROOT: /var/www/html/public_html
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD-lion}
+      MYSQL_DATABASE: ${DB_DATABASE-proxy}
+      HOST_MACHINE_MYSQL_PORT: ${DB_PORT-3306}
+      XDEBUG_CONFIG: "client_host=host.docker.internal remote_port=${XDEBUG_PORT-9003}"
+    depends_on:
+      - dblink
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - zednet
+
+  dblink:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    container_name: "${APP_NAME-dslamp}-mysql"
+    restart: "always"
+    ports:
+      - "127.0.0.1:${DB_PORT-3306}:3306"
+    volumes:
+      - ./container-files/config/initdb:/docker-entrypoint-initdb.d
+      - ./container-files/data/mysql:/var/lib/mysql
+      - ./container-files/logs/mysql:/var/log/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD-lion}
+      MYSQL_DATABASE: ${DB_DATABASE-proxy}
+    networks:
+      - zednet
+
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: "${APP_NAME-dslamp}-phpmyadmin"
+    links:
+      - dblink
+    environment:
+      PMA_HOST: dblink
+      PMA_PORT: ${DB_PORT-3306}
+      PMA_USER: root
+      PMA_PASSWORD: ${DB_PASSWORD-lion}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD-lion}
+      UPLOAD_LIMIT: 512M
+      MEMORY_LIMIT: 512M
+    ports:
+      - "8080:80"
+      - "4433:443"
+    volumes:
+      - ./container-files/config/php/php.ini:/usr/local/etc/php/conf.d/php-phpmyadmin.ini
+    networks:
+      - zednet
+
+  redis:
+    container_name: "${APP_NAME-dslamp}-redis"
+    image: redis:latest
+    ports:
+      - "${REDIS_HOST-127.0.0.1}:${REDIS_PORT-6379}:6379"
+    networks:
+      - zednet
+
+networks:
+  zednet:
+    driver: bridge
